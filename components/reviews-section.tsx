@@ -3,68 +3,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Quote } from 'lucide-react';
 import StarRating from './star-rating';
+import { supabase } from '@/lib/supabase';
 
 interface Review {
-  id: number;
+  id: string;
   name: string;
   date: string;
   rating: number;
   text: string;
 }
 
-const curatedReviews: Review[] = [
-  {
-    id: 1,
-    name: 'Happy Customer',
-    date: 'February 2025',
-    rating: 5,
-    text: "Thankyouuu so so so much for making very cutesy boxes and the cake was sooo good. The packaging ufff I Loved ittt!!! And I requested you just 3-4 hours before to add one more deal in it and you happily did without any fuss and extra charges. I LOVE LOVE LOVEDDD ORDERING FROM YOU. I'll definitely be ordering from you next time inshallah thankyouuu so muchhh",
-  },
-  {
-    id: 2,
-    name: 'First Time Customer',
-    date: 'April 2024',
-    rating: 5,
-    text: "The cake was very delicious... its our 1st experience but you made it worth remembered. We will definitely love to order again on next event in sha allah",
-  },
-  {
-    id: 3,
-    name: 'Satisfied Customer',
-    date: 'Recent',
-    rating: 5,
-    text: "The cake was amazing and loved how it was exactly like the picture, also the packaging was so cute, would look forward to order more from you",
-  },
-  {
-    id: 4,
-    name: 'Cake Lover',
-    date: 'April 2024',
-    rating: 5,
-    text: "The cake was sooo good, we ate it up within an hour. Loved everything! Thankyou so much!",
-  },
-  {
-    id: 5,
-    name: 'Family Order',
-    date: 'July 2024',
-    rating: 5,
-    text: "Hey!! Thank u for the cake it was soooo yummy. My mom and my sisters loved it so much and we were fighting over bites it was so good and my sister was soo happy with it",
-  },
-  {
-    id: 6,
-    name: 'Birthday Order',
-    date: 'June 2024',
-    rating: 5,
-    text: "Everyone loved the cakee smmm. The cake itself tasted SO GOOD. More than half cake vanished within minutes haha. Loved the cake, the aesthetic and especially the cute little note. 10/10 would deff try again",
-  },
-  {
-    id: 7,
-    name: 'Cherry Chocolate Fan',
-    date: 'May 2024',
-    rating: 5,
-    text: "Hey! I hope you are doing well. The cake was absolutely amazing, beautiful & cute. The aroma i got just after opening the box ohhhhhh soooo good. I even like the packing. Flavour was great i m glad i went with cherry chocolate fantasy. You actually made cake came out of fantasy world.",
-  }
-];
-
 export default function ReviewsSection() {
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const autoPlayRef = useRef<NodeJS.Timeout | null>(null);
@@ -74,38 +25,86 @@ export default function ReviewsSection() {
     rating: 0,
     review: ''
   });
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+
+  useEffect(() => {
+    async function loadReviews() {
+      try {
+        const { data, error } = await supabase
+          .from('reviews')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        
+        if (data) {
+          setReviews(data.map(d => ({
+            id: d.id,
+            name: d.name,
+            rating: d.rating,
+            text: d.review_text,
+            date: new Date(d.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+          })));
+        }
+      } catch (err) {
+        console.error('Failed to load reviews:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadReviews();
+  }, []);
 
   // Auto-play carousel
   useEffect(() => {
-    if (isAutoPlaying) {
+    if (isAutoPlaying && reviews.length > 0) {
       autoPlayRef.current = setInterval(() => {
-        setCurrentIndex((prev) => (prev + 1) % curatedReviews.length);
+        setCurrentIndex((prev) => (prev + 1) % reviews.length);
       }, 5000);
     }
     return () => {
       if (autoPlayRef.current) clearInterval(autoPlayRef.current);
     };
-  }, [isAutoPlaying]);
+  }, [isAutoPlaying, reviews.length]);
 
   const goToPrevious = () => {
     setIsAutoPlaying(false);
-    setCurrentIndex((prev) => (prev - 1 + curatedReviews.length) % curatedReviews.length);
+    setCurrentIndex((prev) => (prev - 1 + reviews.length) % reviews.length);
   };
 
   const goToNext = () => {
     setIsAutoPlaying(false);
-    setCurrentIndex((prev) => (prev + 1) % curatedReviews.length);
+    setCurrentIndex((prev) => (prev + 1) % reviews.length);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.name.trim() && formData.review.trim()) {
-      // Reset form after submission
-      setFormData({ name: '', rating: 0, review: '' });
+    if (formData.name.trim() && formData.review.trim() && formData.rating > 0) {
+      setSubmitStatus('submitting');
+      try {
+        const { error } = await supabase
+          .from('reviews')
+          .insert([
+            {
+              name: formData.name,
+              rating: formData.rating,
+              review_text: formData.review,
+              status: 'pending' // Moderated queue
+            }
+          ]);
+          
+        if (error) throw error;
+        
+        setSubmitStatus('success');
+        setFormData({ name: '', rating: 0, review: '' });
+        
+        setTimeout(() => setSubmitStatus('idle'), 5000);
+      } catch(err) {
+        console.error('Failed to post review:', err);
+        setSubmitStatus('error');
+      }
     }
   };
-
-  const currentReview = curatedReviews[currentIndex];
 
   return (
     <section className="py-16 md:py-24 px-6 md:px-12 bg-gradient-to-b from-[#FDF8F5] to-[#F8E8E0]">
@@ -121,59 +120,69 @@ export default function ReviewsSection() {
 
         {/* Featured Review Carousel */}
         <div className="relative mb-12">
-          <div className="bg-white rounded-3xl shadow-lg overflow-hidden border border-[#FAC1B5]/20 p-8 md:p-12">
-            <Quote className="w-10 h-10 text-[#FAC1B5] mb-6" />
-            
-            <div className="mb-4">
-              <StarRating value={currentReview.rating} onChange={() => {}} interactive={false} size="md" showNumber={true} />
+          {loading ? (
+            <div className="bg-white rounded-3xl shadow-lg border border-[#FAC1B5]/20 p-8 py-24 text-center">
+              <p className="text-[#F283AE] font-semibold animate-pulse">Loading reviews...</p>
             </div>
-            
-            <p className="text-[#2C2C2C] text-lg leading-relaxed mb-6">
-              {currentReview.text}
-            </p>
-            
-            <div className="flex items-center justify-between">
-              <p className="text-[#F283AE] font-semibold">
-                - {currentReview.name}
-              </p>
-              <p className="text-sm text-[#98898D]">{currentReview.date}</p>
-            </div>
-          </div>
+          ) : reviews.length > 0 ? (
+            <>
+              <div className="bg-white rounded-3xl shadow-lg overflow-hidden border border-[#FAC1B5]/20 p-8 md:p-12">
+                <Quote className="w-10 h-10 text-[#FAC1B5] mb-6" />
+                
+                <div className="mb-4">
+                  <StarRating value={reviews[currentIndex].rating} onChange={() => {}} interactive={false} size="md" showNumber={true} />
+                </div>
+                
+                <p className="text-[#2C2C2C] text-lg leading-relaxed mb-6">
+                  {reviews[currentIndex].text}
+                </p>
+                
+                <div className="flex items-center justify-between">
+                  <p className="text-[#F283AE] font-semibold">
+                    - {reviews[currentIndex].name}
+                  </p>
+                  <p className="text-sm text-[#98898D]">{reviews[currentIndex].date}</p>
+                </div>
+              </div>
 
-          {/* Navigation Buttons */}
-          <button
-            onClick={goToPrevious}
-            className="absolute left-2 md:-left-4 top-1/2 -translate-y-1/2 bg-white shadow-lg rounded-full p-3 hover:bg-[#FDF8F5] transition-colors z-10"
-            aria-label="Previous review"
-          >
-            <ChevronLeft className="w-6 h-6 text-[#2C2C2C]" />
-          </button>
-          <button
-            onClick={goToNext}
-            className="absolute right-2 md:-right-4 top-1/2 -translate-y-1/2 bg-white shadow-lg rounded-full p-3 hover:bg-[#FDF8F5] transition-colors z-10"
-            aria-label="Next review"
-          >
-            <ChevronRight className="w-6 h-6 text-[#2C2C2C]" />
-          </button>
-
-          {/* Dots Indicator */}
-          <div className="flex justify-center gap-2 mt-6">
-            {curatedReviews.map((_, index) => (
               <button
-                key={index}
-                onClick={() => {
-                  setIsAutoPlaying(false);
-                  setCurrentIndex(index);
-                }}
-                className={`w-2.5 h-2.5 rounded-full transition-all ${
-                  index === currentIndex
-                    ? 'bg-[#F283AE] w-8'
-                    : 'bg-[#FAC1B5]/40 hover:bg-[#FAC1B5]'
-                }`}
-                aria-label={`Go to review ${index + 1}`}
-              />
-            ))}
-          </div>
+                onClick={goToPrevious}
+                className="absolute left-2 md:-left-4 top-1/2 -translate-y-1/2 bg-white shadow-lg rounded-full p-3 hover:bg-[#FDF8F5] transition-colors z-10"
+                aria-label="Previous review"
+              >
+                <ChevronLeft className="w-6 h-6 text-[#2C2C2C]" />
+              </button>
+              <button
+                onClick={goToNext}
+                className="absolute right-2 md:-right-4 top-1/2 -translate-y-1/2 bg-white shadow-lg rounded-full p-3 hover:bg-[#FDF8F5] transition-colors z-10"
+                aria-label="Next review"
+              >
+                <ChevronRight className="w-6 h-6 text-[#2C2C2C]" />
+              </button>
+
+              <div className="flex justify-center flex-wrap gap-2 mt-6">
+                {reviews.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => {
+                      setIsAutoPlaying(false);
+                      setCurrentIndex(index);
+                    }}
+                    className={`h-2.5 rounded-full transition-all ${
+                      index === currentIndex
+                        ? 'bg-[#F283AE] w-8'
+                        : 'bg-[#FAC1B5]/40 w-2.5 hover:bg-[#FAC1B5]'
+                    }`}
+                    aria-label={`Go to review ${index + 1}`}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="bg-white rounded-3xl shadow-lg border border-[#FAC1B5]/20 p-8 text-center text-[#98898D]">
+              No reviews available yet.
+            </div>
+          )}
         </div>
 
         {/* Review Form */}
@@ -181,42 +190,57 @@ export default function ReviewsSection() {
           <h3 className="text-xl font-semibold text-[#2C2C2C] mb-6">
             Share Your Experience
           </h3>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-semibold text-[#2C2C2C] mb-2">Name</label>
-              <input
-                type="text"
-                placeholder="Your Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-3 border border-[#FAC1B5]/30 rounded-lg focus:outline-none focus:border-[#F283AE]"
+          {submitStatus === 'success' ? (
+            <div className="bg-[#C6C870]/20 text-[#2C2C2C] p-6 rounded-xl text-center">
+              <p className="font-semibold text-lg text-[#C6C870] mb-2">Thank you!</p>
+              <p>Your review has been submitted successfully and is pending approval.</p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {submitStatus === 'error' && (
+                <div className="bg-red-100 text-red-700 p-3 rounded-lg text-sm">
+                  Failed to submit review. Please try again later.
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-semibold text-[#2C2C2C] mb-2">Name</label>
+                <input
+                  type="text"
+                  placeholder="Your Name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-3 border border-[#FAC1B5]/30 rounded-lg focus:outline-none focus:border-[#F283AE]"
+                  required
+                  disabled={submitStatus === 'submitting'}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-[#2C2C2C] mb-3">Rating</label>
+                <StarRating 
+                  value={formData.rating} 
+                  onChange={(rating) => setFormData({ ...formData, rating })}
+                  interactive={submitStatus !== 'submitting'}
+                  size="lg"
+                  showNumber={true}
+                />
+              </div>
+              <textarea
+                placeholder="Tell us about your experience..."
+                value={formData.review}
+                onChange={(e) => setFormData({ ...formData, review: e.target.value })}
+                className="w-full px-4 py-3 border border-[#FAC1B5]/30 rounded-lg focus:outline-none focus:border-[#F283AE] resize-none h-24"
                 required
+                disabled={submitStatus === 'submitting'}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-[#2C2C2C] mb-3">Rating</label>
-              <StarRating 
-                value={formData.rating} 
-                onChange={(rating) => setFormData({ ...formData, rating })}
-                interactive={true}
-                size="lg"
-                showNumber={true}
-              />
-            </div>
-            <textarea
-              placeholder="Tell us about your experience..."
-              value={formData.review}
-              onChange={(e) => setFormData({ ...formData, review: e.target.value })}
-              className="w-full px-4 py-3 border border-[#FAC1B5]/30 rounded-lg focus:outline-none focus:border-[#F283AE] resize-none h-24"
-              required
-            />
-            <button
-              type="submit"
-              className="w-full bg-[#F283AE] hover:bg-[#E86FA3] text-white py-3 rounded-lg font-semibold transition-colors"
-            >
-              Submit Review
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={submitStatus === 'submitting' || formData.rating === 0}
+                className="w-full bg-[#F283AE] hover:bg-[#E86FA3] disabled:opacity-50 text-white py-3 rounded-lg font-semibold transition-colors"
+              >
+                {submitStatus === 'submitting' ? 'Submitting...' : 'Submit Review'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </section>
