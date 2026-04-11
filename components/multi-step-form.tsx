@@ -1,31 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Upload, Check } from 'lucide-react';
+import { getCakeSizes, getFlavours, getAddOns, SizeOption } from '@/lib/products';
+import { createClient } from '@/utils/supabase/client';
 
-// Exact flavours from requirements
-const FLAVOURS = [
-  'French Vanilla',
-  'Celestial Caramel',
-  'Cherry Chocolate Fantasy',
-  'Chocolate Amour',
-  'Nutella Caramel'
-];
-
-// Cake sizes
-const CAKE_SIZES = ['1 lb', '2 lb', '3 lb', '4 lb', '5 lb'];
-
-// Cupcake sizes
+// Cupcake sizes remain fixed as per requirements unless we add them to DB globally
 const CUPCAKE_SIZES = [
   { label: 'Box of 6', value: '6' },
   { label: 'Box of 12', value: '12' },
 ];
 
-// Cake shapes
 const CAKE_SHAPES = ['Heart', 'Round', 'Square'];
 
-// Time slots from requirements (9:00 AM - 9:00 PM)
 const TIME_SLOTS = [
   '9:00 AM - 12:00 PM',
   '12:00 PM - 3:00 PM',
@@ -33,17 +21,33 @@ const TIME_SLOTS = [
   '6:00 PM - 9:00 PM',
 ];
 
-// Add-ons with exact prices from requirements
-const ADD_ONS = [
-  { id: 'message-card', label: 'Custom Message Card (Printed / Handwritten)', price: 150 },
-  { id: 'candles', label: 'Extra Candles (Themed / Plain)', price: 30 },
-  { id: 'topper', label: 'Cake Topper (Happy Birthday, Eid, Love)', price: 250 },
-  { id: 'balloon', label: 'Helium Balloon', price: 200 },
-];
-
 export default function MultiStepForm() {
   const [step, setStep] = useState(1);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  
+  // Dynamic DB Data
+  const [flavours, setFlavours] = useState<string[]>([]);
+  const [cakeSizes, setCakeSizes] = useState<SizeOption[]>([]);
+  const [addOns, setAddOns] = useState<{id: string, label: string, price: number}[]>([]);
+  
+  useEffect(() => {
+    async function loadDbConfig() {
+      try {
+        const [loadedSizes, loadedFlavours, loadedAddons] = await Promise.all([
+          getCakeSizes(),
+          getFlavours(),
+          getAddOns()
+        ]);
+        setCakeSizes(loadedSizes);
+        setFlavours(loadedFlavours);
+        setAddOns(loadedAddons);
+      } catch(e) {
+        console.error("Failed to fetch config");
+      }
+    }
+    loadDbConfig();
+  }, []);
+
   const [formData, setFormData] = useState({
     // Step 1: Customer Details
     name: '',
@@ -53,7 +57,7 @@ export default function MultiStepForm() {
     orderType: 'cake' as 'cake' | 'cupcakes',
     // Step 3: Product Details
     flavour: '',
-    size: '2 lb',
+    size: '',
     cupcakeSize: '6',
     shape: 'Round',
     // Step 4: Customization
@@ -107,15 +111,52 @@ export default function MultiStepForm() {
 
   const calculateAddOnsTotal = () => {
     return formData.addOns.reduce((total, addOnId) => {
-      const addOn = ADD_ONS.find(a => a.id === addOnId);
+      const addOn = addOns.find(a => a.id === addOnId);
       return total + (addOn?.price || 0);
     }, 0);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const supabase = createClient();
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.termsAccepted) {
-      setIsSubmitted(true);
+    if (!formData.termsAccepted || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+       const orderNumber = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+       const items = {
+         flavour: formData.flavour,
+         size: formData.orderType === 'cake' ? formData.size : `Box of ${formData.cupcakeSize}`,
+         shape: formData.shape,
+         theme: formData.theme,
+         message: formData.messageOnCake,
+         specialInstructions: formData.specialInstructions,
+         delivery: formData.deliveryType,
+         date: formData.date,
+         time: formData.timeSlot,
+         addons: formData.addOns.map(id => addOns.find(a => a.id === id)?.label)
+       };
+       
+       const total = calculateAddOnsTotal(); // Add base price if required, currently custom cakes don't have base UI price until manually quoted
+       
+       await supabase.from('orders').insert([{
+         order_number: orderNumber,
+         customer_name: formData.name,
+         customer_phone: formData.phone,
+         order_type: `Custom ${formData.orderType}`,
+         items: items,
+         total_amount: total,
+         status: 'Pending'
+       }]);
+       
+       setIsSubmitted(true);
+    } catch(err) {
+       console.error(err);
+       alert("Failed to submit order to database.");
+    } finally {
+       setIsSubmitting(false);
     }
   };
 
@@ -314,7 +355,7 @@ export default function MultiStepForm() {
               <div>
                 <label className="block text-sm font-semibold text-[#2C2C2C] mb-3">Flavour *</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {FLAVOURS.map((flavour) => (
+                  {flavours.map((flavour) => (
                     <label
                       key={flavour}
                       className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
@@ -341,23 +382,23 @@ export default function MultiStepForm() {
                 <div>
                   <label className="block text-sm font-semibold text-[#2C2C2C] mb-3">Size *</label>
                   <div className="flex flex-wrap gap-3">
-                    {CAKE_SIZES.map((size) => (
+                    {cakeSizes.map((size) => (
                       <label
-                        key={size}
+                        key={size.value}
                         className={`px-6 py-3 rounded-xl border-2 cursor-pointer transition-all ${
-                          formData.size === size
+                          formData.size === size.value
                             ? 'border-[#F283AE] bg-[#F283AE]/10'
                             : 'border-[#FAC1B5]/30 hover:border-[#FAC1B5]'
                         }`}
                       >
                         <input
                           type="radio"
-                          value={size}
-                          checked={formData.size === size}
+                          value={size.value}
+                          checked={formData.size === size.value}
                           onChange={(e) => handleInputChange('size', e.target.value)}
                           className="hidden"
                         />
-                        <p className="font-semibold text-[#2C2C2C]">{size}</p>
+                        <p className="font-semibold text-[#2C2C2C]">{size.label}</p>
                       </label>
                     ))}
                   </div>
@@ -452,7 +493,7 @@ export default function MultiStepForm() {
               <div>
                 <label className="block text-sm font-semibold text-[#2C2C2C] mb-3">Add-ons (Optional)</label>
                 <div className="space-y-3">
-                  {ADD_ONS.map((addOn) => (
+                  {addOns.map((addOn) => (
                     <label
                       key={addOn.id}
                       className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${
@@ -707,7 +748,7 @@ export default function MultiStepForm() {
                     <p className="text-[#98898D] mb-2">Add-ons</p>
                     <div className="space-y-1">
                       {formData.addOns.map((addOnId) => {
-                        const addOn = ADD_ONS.find(a => a.id === addOnId);
+                        const addOn = addOns.find(a => a.id === addOnId);
                         return addOn ? (
                           <div key={addOnId} className="flex justify-between text-sm">
                             <span className="text-[#2C2C2C]">{addOn.label}</span>

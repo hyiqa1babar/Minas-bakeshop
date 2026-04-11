@@ -14,6 +14,7 @@ import {
   CakeProductItem,
   SizeOption
 } from '@/lib/products';
+import { createClient } from '@/utils/supabase/client';
 
 // Category accent colors
 const categoryColors: Record<string, string> = {
@@ -114,24 +115,61 @@ export default function ProductDetailPage({
   }, 0);
   const totalPrice = (sizePrice + addOnsTotal) * quantity;
 
-  // WhatsApp order message
-  const handleOrderNow = () => {
-    const orderDetails = [
-      `*New Cake Order - Minas Bakeshop*`,
-      ``,
-      `*Design:* ${cakeProduct.name}`,
-      `*Category:* ${categoryInfo.name}`,
-      `*Size:* ${cakeSizes.find(s => s.value === selectedSize)?.label}`,
-      `*Shape:* ${selectedShape}`,
-      selectedFlavour ? `*Flavour:* ${selectedFlavour}` : '',
-      selectedAddOns.length > 0 ? `*Add-ons:* ${selectedAddOns.map(id => addOns.find(a => a.id === id)?.label).join(', ')}` : '',
-      message ? `*Message on Cake:* ${message}` : '',
-      `*Quantity:* ${quantity}`,
-      `*Total:* Rs. ${totalPrice.toLocaleString()}`,
-    ].filter(Boolean).join('\n');
+  const [isOrdering, setIsOrdering] = useState(false);
+  const supabase = createClient();
 
-    const whatsappUrl = `https://wa.me/923270203490?text=${encodeURIComponent(orderDetails)}`;
-    window.open(whatsappUrl, '_blank');
+  // WhatsApp order message and Supabase Dispatch
+  const handleOrderNow = async () => {
+    if (isOrdering) return;
+    setIsOrdering(true);
+    
+    try {
+      const orderNumber = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+      
+      const orderDetails = [
+        `*New Cake Order - Minas Bakeshop*`,
+        ``,
+        `*Order ID:* ${orderNumber}`,
+        `*Design:* ${cakeProduct.name}`,
+        `*Category:* ${categoryInfo.name}`,
+        `*Size:* ${cakeSizes.find(s => s.value === selectedSize)?.label}`,
+        `*Shape:* ${selectedShape}`,
+        selectedFlavour ? `*Flavour:* ${selectedFlavour}` : '',
+        selectedAddOns.length > 0 ? `*Add-ons:* ${selectedAddOns.map(id => addOns.find(a => a.id === id)?.label).join(', ')}` : '',
+        message ? `*Message on Cake:* ${message}` : '',
+        `*Quantity:* ${quantity}`,
+        `*Total:* Rs. ${totalPrice.toLocaleString()}`,
+      ].filter(Boolean).join('\n');
+
+      // Silently record to DB
+      await supabase.from('orders').insert([{
+        order_number: orderNumber,
+        customer_name: 'Pending WhatsApp',
+        customer_phone: 'Pending',
+        order_type: 'product',
+        items: {
+          product: cakeProduct.name,
+          category: categoryInfo.name,
+          size: cakeSizes.find(s => s.value === selectedSize)?.label,
+          shape: selectedShape,
+          flavour: selectedFlavour,
+          addons: selectedAddOns.map(id => addOns.find(a => a.id === id)?.label),
+          message: message,
+          quantity: quantity
+        },
+        total_amount: totalPrice,
+        status: 'Pending'
+      }]);
+
+      const whatsappUrl = `https://wa.me/923270203490?text=${encodeURIComponent(orderDetails)}`;
+      window.open(whatsappUrl, '_blank');
+    } catch (e) {
+      console.error("Order logging failed", e);
+      // Fallback
+      window.alert("Failed to initiate order. Please try again.");
+    } finally {
+      setIsOrdering(false);
+    }
   };
 
   return (

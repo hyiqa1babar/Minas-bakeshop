@@ -16,6 +16,7 @@ export interface CakeProductItem {
   hasFlavours?: boolean;
   hasAddOns?: boolean;
   flowersNote?: string;
+  category_slug?: string;
 }
 
 export interface SizeOption {
@@ -41,6 +42,22 @@ export async function getProductTypeFromSlug(slug: string): Promise<'cake' | 'de
   return (info?.type as 'cake' | 'dessert' | 'luxury') || 'cake';
 }
 
+export async function getAllProducts(): Promise<CakeProductItem[]> {
+  const { data, error } = await supabase.from('products').select('*');
+  if (error || !data) return [];
+  return data.map(p => ({
+    id: p.slug,
+    name: p.name,
+    description: p.description,
+    image: p.image_url,
+    price: p.base_price,
+    hasFlavours: p.has_flavours,
+    hasAddOns: p.has_add_ons,
+    flowersNote: p.flowers_note,
+    category_slug: p.category_slug
+  }));
+}
+
 // Fetch products by category
 export async function getCakeProductsByCategory(categorySlug: string): Promise<CakeProductItem[]> {
   const { data, error } = await supabase
@@ -58,6 +75,7 @@ export async function getCakeProductsByCategory(categorySlug: string): Promise<C
     hasFlavours: p.has_flavours,
     hasAddOns: p.has_add_ons,
     flowersNote: p.flowers_note
+
   }));
 }
 

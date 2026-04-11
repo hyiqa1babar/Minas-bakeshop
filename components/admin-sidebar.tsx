@@ -1,5 +1,8 @@
 import Link from 'next/link';
-import { LayoutDashboard, ShoppingCart, Users, Package } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Users, Package, Star } from 'lucide-react';
+
+import { logout } from '@/app/admin/login/logout-action';
+import { LogOut } from 'lucide-react';
 
 export default function AdminSidebar({ activeTab }: { activeTab: string }) {
   const navItems = [
@@ -7,6 +10,7 @@ export default function AdminSidebar({ activeTab }: { activeTab: string }) {
     { id: 'products', label: 'Products', icon: Package, href: '/admin/products' },
     { id: 'orders', label: 'Orders', icon: ShoppingCart, href: '/admin/orders' },
     { id: 'customers', label: 'Customers', icon: Users, href: '/admin/customers' },
+    { id: 'reviews', label: 'Reviews', icon: Star, href: '/admin/reviews' },
   ];
 
   return (
@@ -34,6 +38,16 @@ export default function AdminSidebar({ activeTab }: { activeTab: string }) {
             </Link>
           );
         })}
+        
+        <form action={logout}>
+          <button
+            type="submit"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors mt-8 border-t border-white/5 pt-8"
+          >
+            <LogOut size={20} />
+            <span className="font-semibold">Log Out</span>
+          </button>
+        </form>
       </nav>
 
       <div className="absolute bottom-6 left-6 right-6">
@@ -47,3 +61,4 @@ export default function AdminSidebar({ activeTab }: { activeTab: string }) {
     </aside>
   );
 }
+
